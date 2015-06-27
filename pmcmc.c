@@ -8,7 +8,7 @@
 #include <gsl/gsl_vector.h>
 #include <gsl/gsl_matrix.h>
 #include <libstandard.h>
-#define NUM_SAMPLES 8000
+#define NUM_SAMPLES 10000
 #define NUM_CORPOMENT 2
 #define DIMENTION 2
 #define NUM_THREAD 3
@@ -94,7 +94,7 @@ void rnorm(double *result,int n,double mean,double sd){
 		}while (r2 > 1.0 || r2 == 0);
 
 		/* Box-Muller transform */
-		result[i]=sd * y * sqrt (-2.0 * log (r2) / r2);
+		result[i]=sd * y * sqrt (-2.0 * log (r2) / r2)+mean;
 	}
 }
 
@@ -143,6 +143,13 @@ double gmm(gsl_vector **sample,double *parameter){
 	double theta[NUM_CORPOMENT];
 	gmmArg arg[NUM_THREAD];
 	paramSum=0.0;
+	if(parameter[0] > 1.0) parameter[0]=1.0;
+	else if(parameter[0] < 0.0) parameter[0]=0.1;
+	
+	for(i=0;i<11;i++){
+	    if(parameter[i] < 0.0) parameter[i]=0.01;
+        //printf("parameter[%d]:%lf\n",i,parameter[i]);
+    }
 	for(i=0;i<NUM_CORPOMENT;i++){
 	    model[i]=mnorm_init(&parameter[i*numParameterConst+(NUM_CORPOMENT-1)]);
 	    theta[i]=(NUM_CORPOMENT-1==i) ? 1.0-paramSum : parameter[i];
@@ -199,63 +206,89 @@ double differentiate(double (*log_fun)(void *,double *),void *arg,double *param,
     param[targetIndex]=tmp;
     return r;
 }
+double squereSum(double *target,int num){
+    int i;
+    double r=0.0;
+    
+    for(i=0;i<num;i++){
+        r += target[i]*target[i];
+    }
+    return r;
+}
 
-void pmcmc(double (*log_fun)(void *,double *),void *arg,double *theta,int numTheta,int mcmc){
+double norm(double *x,double *param){
+    double mu=param[0];
+    double r=0.0;
+    int i;
+    for(i=0;i<NUM_SAMPLES;i++){
+        r+=log(1.0/sqrt(2*3.141592653589*2.0))+(-((x[i]-mu)*(x[i]-mu))/(2.0*2.0));
+    }
+    return -r;
+}
+double *energy_function_delta(void *arg,double *parameter,int numParameter){
+    int i;
+    const double eps=1.0e-8;
+    double *result=malloc(sizeof(double)*numParameter);
+    
+    for(i=0;i<numParameter;i++){
+        double tmp=parameter[i];
+        parameter[i] -= eps;
+        double row = gmm(arg,parameter);
+        parameter[i] += 2.0*eps;
+        double high = gmm(arg,parameter);
+        result[i]=(high-row)/(2.0*eps);
+        parameter[i] = tmp;
+    }
+    return result;
+}
+void pmcmc_hamiltonian(double (*energy_function)(void *,double *),void *arg,double *parameter,int numParameter,int mcmc){
     int iter,i,j;
-	double *theta_can=malloc(sizeof(double)*numTheta),rnd;
-	double *arr=malloc(sizeof(double)*numTheta);
-	double userfun_cur,pN,dt=0.05;
-	double t=0.5,m=1.0,rho=0.05;
-	for (iter = 0; iter < mcmc; ++iter) {
-	    memcpy(theta_can,theta,sizeof(double)*numTheta);
-		for (i = 0; i < numTheta; ++i) {
-			rnorm(&rnd,1,0.0,1.0);
-			theta_can[i] += rnd;
-			
-			rnorm(&rnd,1,0.0,1.0);
-			pN=rnd;
-			
-			memcpy(arr,theta_can,sizeof(double)*numTheta);
+    double *current_parameter = parameter;
+    double *momentum=malloc(sizeof(double)*numParameter);
+    double *current_parameter_candidate=malloc(sizeof(double)*numParameter);
+    int iter_leapfrog=100;
+    double leapfrog_accuracy=0.0002;
+    
+    for (iter = 0; iter < mcmc; ++iter) {
+        rnorm(momentum,numParameter,0.0,1.0);
+        double hamilton = squereSum(momentum,numParameter) / 2.0 + energy_function(arg,current_parameter);
+        memcpy(current_parameter_candidate,current_parameter,sizeof(double)*numParameter);
+        for(i=0;i<iter_leapfrog;i++){
+            double *diff=energy_function_delta(arg,current_parameter_candidate,numParameter);
+            for(j=0;j<numParameter;j++){
+                momentum[j] -= leapfrog_accuracy * diff[j] / 2.0;
+            }
+            free(diff);
+            
+            for(j=0;j<numParameter;j++){
+                current_parameter_candidate[j] += leapfrog_accuracy * momentum[j];
+            }
+            
+            diff=energy_function_delta(arg,current_parameter_candidate,numParameter);
 
-		    //printf("0: ");
-		    //printf("pN:%lf ",pN);
-		    pN=pN+differentiate(log_fun,arg,arr,i)*0.5*rho;
-		    //printf("pN:%lf\n",pN);
-			for(j=0;j<10;j++){
-			    arr[i]+=max(min(rho*pN,20),-20);
-			    if( i==0) theta_can[0] = max(min(theta_can[0],1.0),0.0);
-			    double fact=(i<5-1) ? rho : rho*0.5;
-			    //printf("%d: ",j+1);
-			    double delta=differentiate(log_fun,arg,arr,i);
-			    pN+=fact*delta;
-			}
-			theta_can[i]=arr[i];
-			//printf("theta_can[%d]:%lf\n",i,theta_can[i]);
-			if( i==0) theta_can[0] = max(min(theta_can[0],1.0),0.0);
-			if(mcmc-iter < 2)
-				printf("theta_can[%d]:%lf\n",i,theta_can[i]);
-    		
-    	}
-    	
-    	
-		double userfun_can = log_fun(arg,theta_can);
-		if(iter==0) userfun_cur=userfun_can-1e-10;
-		const double ratio = exp(userfun_can - userfun_cur);
-		if (xor128() < ratio) {
-			for (i = 0; i < numTheta; ++i) {
-				theta[i] = theta_can[i];
-			}
-			userfun_cur = userfun_can;
-		}
-		if(iter%100==0){
-		    printf("iter:%d log:%f\n",iter,userfun_can);
-		    for (i = 0; i < numTheta; ++i) {
-    		    printf("theta_can[%d]:%lf\n",i,theta_can[i]);
+            for(j=0;j<numParameter;j++){
+                momentum[j] -= leapfrog_accuracy * diff[j] / 2.0;
+            }
+            free(diff);
+            
+        }
+        double h2 = squereSum(momentum,numParameter) / 2.0 + energy_function(arg,current_parameter_candidate);
+        double differenceHamilton = hamilton - h2;
+        
+        if (xor128() < exp(differenceHamilton)){
+            memcpy(current_parameter,current_parameter_candidate,sizeof(double)*numParameter);
+        }
+        
+        if(iter%1==0){
+		    printf("iter:%d \n",iter);
+		    for (i = 0; i < numParameter; ++i) {
+    		    printf("current_parameter[%d]:%lf\n",i,current_parameter[i]);
     		}
 		}
+		
     }
 }
-void pmcmc2(double (*log_fun)(void *,double *),void *arg,double *theta,int numTheta,int mcmc){
+void pmcmc(double (*log_fun)(void *,double *),void *arg,double *theta,int numTheta,int mcmc){
     int iter,i;
 	double *theta_can=malloc(sizeof(double)*numTheta),rnd;
 	double userfun_cur;
@@ -264,7 +297,7 @@ void pmcmc2(double (*log_fun)(void *,double *),void *arg,double *theta,int numTh
 		for (i = 0; i < numTheta; ++i) {
 			rnorm(&rnd,1,0.0,1.0);
 			theta_can[i] = theta[i]+rnd*t; //修正予定
-			theta_can[0] = (theta_can[0] > 1.0) ? 1.0 : theta_can[0];
+			//theta_can[0] = (theta_can[0] > 1.0) ? 1.0 : theta_can[0];
 			if(mcmc-iter < 2)
 				printf("theta_can[%d]:%lf\n",i,theta_can[i]);
     		
@@ -293,6 +326,13 @@ PmcmcBuffer* pmcmc_init(/*gsl_vector **sample*/){
 }
 int main(void){
     int i;
+    /*double *rnd=malloc(sizeof(double)*NUM_SAMPLES);
+    
+    rnorm(rnd,NUM_SAMPLES,1000.0,2.0);
+    double theta2[1]={20.0};
+    pmcmc_hamiltonian((double (*)(void *,double *))norm,rnd,theta2,1,10000);
+    exit(1);*/
+    
     constant=1.0/pow(sqrt(2*M_PI),(double)DIMENTION);
     gsl_vector **sample=malloc(sizeof(gsl_vector *)*NUM_SAMPLES);
 	gsl_rng *ctx = gsl_rng_alloc (gsl_rng_default);
@@ -320,7 +360,7 @@ int main(void){
 	gsl_matrix_set(covar[1],1,1,3.0);
 	
 	double theta[]={
-	    1.0, //weights
+	    0.9, //weights
 	    5.0,5.0,3.0,5.0,0.1, //param1
 		5.0,5.0,7.0,3.0,0.8 //param2
 	};

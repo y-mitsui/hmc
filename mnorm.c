@@ -76,7 +76,10 @@ mnorm *mnorm_init(double *parameter){
         }
     }
     /* 1/det(sigma) */
+    /*printf("gsl_det(sigma):%lf\n",gsl_det(sigma));
+    printf("sqrt(gsl_det(sigma)):%lf\n",sqrt(fabs(gsl_det(sigma))));*/
     r->sigmaDetInv=1.0/sqrt(gsl_det(sigma));
+    //printf("r->sigmaDetInv:%lf\n",r->sigmaDetInv);
     //printf("r->sigmaDetInv:%lf\n",sqrt(gsl_det(sigma)));
     r->constant=1.0/pow(sqrt(2*M_PI),(double)DIMENTION);
     /*tmp=inv(sigma)*/

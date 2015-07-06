@@ -11,7 +11,7 @@
 #include <clapack.h>
 #include <xmmintrin.h>
 #include <immintrin.h>
-
+#include "pmcmc.h"
 
 
 gsl_vector *gsl_vector_clone(const gsl_vector *src){
@@ -35,53 +35,47 @@ double gsl_det(gsl_matrix *m){
 	
 	return n;
 }
-#define DIMENTION 2
-typedef struct{
-    gsl_matrix *invSigma;
-    double *invSigmaPtr;
-    double u[DIMENTION];
-    double sigmaDetInv;
-    double constant;
-    double left;
-}mnorm;
-typedef struct{
-    double *vecTmp;
-    gsl_vector **vecX;  
-    double tmp[DIMENTION];
-}PmcmcBuffer;
 
-mnorm *mnorm_init(double *parameter){
+mnorm *mnorm_init(double *parameter,int dimention){
     int i,j;
     mnorm *r=malloc(sizeof(mnorm));
-    gsl_matrix *sigma=gsl_matrix_alloc(DIMENTION,DIMENTION);
+    r->u = malloc(sizeof(double)*dimention);
+    gsl_matrix *sigma=gsl_matrix_alloc(dimention,dimention);
     	
     //gsl_vector *u=gsl_vector_alloc(DIMENTION);
     
-	for(i=0;i<DIMENTION;i++){
+	for(i=0;i<dimention;i++){
 	    r->u[i]=parameter[i];
         //gsl_vector_set(u,i,parameter[i]);
     }
-    for(i=0;i<DIMENTION;i++){
+    for(i=0;i<dimention;i++){
         //gsl_matrix_set(sigma,i,i,fabs(parameter[i+DIMENTION]));
-        gsl_matrix_set(sigma,i,i,parameter[i+DIMENTION]);
+        gsl_matrix_set(sigma,i,i,parameter[i+dimention]);
     }
-    double *pp=&parameter[DIMENTION+DIMENTION];
-    for(i=0;i<DIMENTION;i++){
-        for(j=i+1;j<DIMENTION;j++){
+    double *pp=&parameter[dimention+dimention];
+    for(i=0;i<dimention;i++){
+        for(j=i+1;j<dimention;j++){
             double aa=*pp; ////修正予定
             gsl_matrix_set(sigma,i,j,aa);
             gsl_matrix_set(sigma,j,i,aa);
-            //printf("aa:%lf\n",aa);
+            //printf("%d %d aa:%lf\n",i,j,aa);
             pp++;
         }
     }
+    /*for(i=0;i<DIMENTION;i++){
+        for(j=0;j<DIMENTION;j++){
+            printf("%f ",gsl_matrix_get(sigma,i,j));
+        }
+        puts("");
+    }*/
     /* 1/det(sigma) */
-    /*printf("gsl_det(sigma):%lf\n",gsl_det(sigma));
-    printf("sqrt(gsl_det(sigma)):%lf\n",sqrt(fabs(gsl_det(sigma))));*/
+    //printf("gsl_det(sigma):%lf\n",gsl_det(sigma));
+    /*printf("sqrt(gsl_det(sigma)):%lf\n",sqrt(fabs(gsl_det(sigma))));*/
+    //printf("sqrt(gsl_det(sigma)):%lf\n",sqrt(gsl_det(sigma)));
     r->sigmaDetInv=1.0/sqrt(gsl_det(sigma));
     //printf("r->sigmaDetInv:%lf\n",r->sigmaDetInv);
     //printf("r->sigmaDetInv:%lf\n",sqrt(gsl_det(sigma)));
-    r->constant=1.0/pow(sqrt(2*M_PI),(double)DIMENTION);
+    r->constant=1.0/pow(sqrt(2*M_PI),(double)dimention);
     /*tmp=inv(sigma)*/
     gsl_matrix *tmp=gsl_matrix_clone(sigma);
     gsl_permutation * p = gsl_permutation_alloc (tmp->size1);
@@ -92,29 +86,26 @@ mnorm *mnorm_init(double *parameter){
     gsl_matrix_free(tmp);
     r->invSigma=invTmp;
     gsl_permutation_free(p);
-    
-    
-    
-	    gsl_matrix_free(sigma);
-	    //gsl_vector_free(u);
-	    
-	 r->left=r->constant*r->sigmaDetInv ;
-	 
+    gsl_matrix_free(sigma);
+	//gsl_vector_free(u);
+	r->left=r->constant*r->sigmaDetInv ;
 	r->invSigmaPtr=gsl_matrix_ptr(r->invSigma,0,0);
     return r;
 }
-inline void mul(double *vec,double *mat,double *r){
+inline void mul(double *vec,double *mat,double *r,int dimention){
     r[0]=vec[0]*mat[0]+vec[1]*mat[2];
     r[1]=vec[0]*mat[1]+vec[1]*mat[3];
 }
 double mnorm_pdf(PmcmcBuffer *pctx,mnorm *ctx,double *x){
-    pctx->tmp[0]=x[0]-ctx->u[0];
-    pctx->tmp[1]=x[1]-ctx->u[1];
-
+    int i=0;
+    for(i=0;i<ctx->invSigma->size1;i++){
+        pctx->tmp[i]=x[i]-ctx->u[i];
+    }
+    
     /*pctx->vecTmp[0]=1.0;
     pctx->vecTmp[1]=1.0;*/
-    //cblas_dgemv(CblasRowMajor,CblasTrans,ctx->invSigma->size1,ctx->invSigma->size2,1.0,ctx->invSigmaPtr,ctx->invSigma->size1,pctx->tmp,1,0.0,pctx->vecTmp,1);
-    mul(pctx->tmp,ctx->invSigmaPtr,pctx->vecTmp);
+    cblas_dgemv(CblasRowMajor,CblasTrans,ctx->invSigma->size1,ctx->invSigma->size2,1.0,ctx->invSigmaPtr,ctx->invSigma->size1,pctx->tmp,1,0.0,pctx->vecTmp,1);
+    //mul(pctx->tmp,ctx->invSigmaPtr,pctx->vecTmp,ctx->invSigma->size1);
     
     /*__m128d u2 = {0};
     

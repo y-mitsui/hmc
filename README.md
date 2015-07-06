@@ -7,4 +7,4 @@ hmc
 
 
 ## Usage
-Read example.py
+Read example2.py

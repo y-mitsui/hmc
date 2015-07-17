@@ -314,12 +314,37 @@ void pmcmc(double (*log_fun)(void *,double *),void *arg,double *theta,int numThe
 	double t=0.2;
 
 	for (iter = 0; iter < mcmc; ++iter) {
+        for (i = 0; i < numVariable; i++){
+            switch (variable[i].type){
+                case VT_CORR_MATRIX:
+                    for(j<variable[i].numArray){
+                        for(k<variable[i].numArray){
+                            norm(&rnd,1,0.0,1.0);
+                            double tmp = gsl_matrix_get(variable[i].value,j,k);
+                            gsl_matrix_set(variable[i].value,j,k,tmp + rnd);
+                            if(gsl_linalg_cholesky_decomp(variable[i].value)==0)
+                            break;
+                        }
+                    }
+                    break;
+                case VT_VECTOR:
+                    for(j<variable[i].numArray){
+                        double tmp = gsl_matrix_get(variable[i].value,j,k);
+                        gsl_matrix_set(variable[i].value,j,k,tmp + rnd);
+                    }
+                    break;
+                case VT_THETA:
+                    break;
+            }
+        }
 		for (i = 0; i < numTheta; ++i) {
 			rnorm(&rnd,1,0.0,1.0);
 			theta_can[i] = theta[i]+rnd*t; //修正予定
 			//theta_can[0] = (theta_can[0] > 1.0) ? 1.0 : theta_can[0];
 			if(iter%1000==0)
 				printf("theta_can[%d]:%lf\n",i,theta_can[i]);
+
+            
     		
     	}
 		double userfun_can = log_fun(arg,theta_can);
@@ -397,6 +422,11 @@ static PyObject *pmcmcMain(PyObject *self, PyObject *args){
         5.0,5.0,7.0,3.0,0.8 //param2
     };*/
 
+    typedef struct {
+        var_type type;
+        int array_number;
+    }Variable;
+    Variable *ctx=initVariable(CORR_MATRIX,4);
     //int num_theta = num_corpoment - 1  + num_corpoment * (arg.sample[0]->size + arg.sample[0]->size * arg.sample[0]->size);
     int num_theta = 11;
     //int num_theta = (num_corpoment - 1) + num_corpoment * ( (arg.sample[0]->size) + (arg.sample[0]->size) +  ((arg.sample[0]->size*arg.sample[0]->size-arg.sample[0]->size)/2) );

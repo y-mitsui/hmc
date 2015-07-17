@@ -14,7 +14,7 @@
 #include "pmcmc.h"
 #define NUM_SAMPLES 20000
 #define NUM_CORPOMENT 2
-#define DIMENTION 2
+#define DIMENTION 3
 #define NUM_THREAD 3
 
 
@@ -129,8 +129,13 @@ void *gmmThread(void *arg){
             //printf("try:%.15lf\n", mnorm_pdf(ctx->pctx,model[i],gsl_vector_ptr(sample[k],0)));
 		    sum+=theta[i]*mnorm_pdf(ctx->pctx,model[i],gsl_vector_ptr(sample[k],0));
 	    }
+        if(isinf(sum)){
+            printf("inf\n");
+            exit(1);
+        }
+        
         //exit(1);
-	    if ( sum < 1.0e-10 ) sum=1.0e-10;
+	    //if ( sum < 1.0e-10 ) sum=1.0e-10;
 	    r+=log(sum);
 	}
 	result[ctx->idx]=r;
@@ -162,7 +167,8 @@ double gmm(GmmParam *param,double *parameter){
         int numCovariance = param->sample[0]->size * (param->sample[0]->size - 1 ) / 2;
         // 1要素当たりのパラメーター数
         int numParameterConst = 2 * param->sample[0]->size + numCovariance;
-	    model[i]=mnorm_init(&parameter[i*numParameterConst+(param->num_corpoment-1)],param->sample[0]->size);
+	    if((model[i]=mnorm_init(&parameter[i*numParameterConst+(param->num_corpoment-1)],param->sample[0]->size))==NULL)
+            return -999999999.0;
 	    theta[i]=(param->num_corpoment-1==i) ? 1.0-paramSum : parameter[i];
 	    paramSum+=parameter[i];
 	}
@@ -187,13 +193,13 @@ double gmm(GmmParam *param,double *parameter){
 	pthread_join(tid[1],NULL);
 	pthread_join(tid[2],NULL);
 	r=result[0]+result[1]+result[2];
-	
+        
 	for(i=0;i<param->num_corpoment;i++){
 	    mnorm_free(model[i]);
 	}
     free(model);
     free(theta);
-	return -r;
+	return r;
 }
 inline double min(double x,double y){
     return (x < y) ? x : y;
@@ -246,9 +252,9 @@ double *energy_function_delta(void *arg,double *parameter,int numParameter){
     for(i=0;i<numParameter;i++){
         double tmp=parameter[i];
         parameter[i] -= eps;
-        double row = gmm(arg,parameter);
+        double row = -gmm(arg,parameter);
         parameter[i] += 2.0*eps;
-        double high = gmm(arg,parameter);
+        double high = -gmm(arg,parameter);
         result[i]=(high-row)/(2.0*eps);
         parameter[i] = tmp;
     }
@@ -264,7 +270,7 @@ void pmcmc_hamiltonian(double (*energy_function)(void *,double *),void *arg,doub
     
     for (iter = 0; iter < mcmc; ++iter) {
         rnorm(momentum,numParameter,0.0,1.0);
-        double hamilton = squereSum(momentum,numParameter) / 2.0 + energy_function(arg,current_parameter);
+        double hamilton = squereSum(momentum,numParameter) / 2.0 - energy_function(arg,current_parameter);
         memcpy(current_parameter_candidate,current_parameter,sizeof(double)*numParameter);
         for(i=0;i<iter_leapfrog;i++){
             double *diff=energy_function_delta(arg,current_parameter_candidate,numParameter);
@@ -285,7 +291,7 @@ void pmcmc_hamiltonian(double (*energy_function)(void *,double *),void *arg,doub
             free(diff);
             
         }
-        double h2 = squereSum(momentum,numParameter) / 2.0 + energy_function(arg,current_parameter_candidate);
+        double h2 = squereSum(momentum,numParameter) / 2.0 - energy_function(arg,current_parameter_candidate);
         double differenceHamilton = hamilton - h2;
         
         if (xor128() < exp(differenceHamilton)){
@@ -305,7 +311,7 @@ void pmcmc(double (*log_fun)(void *,double *),void *arg,double *theta,int numThe
     int iter,i;
 	double *theta_can=malloc(sizeof(double)*numTheta),rnd;
 	double userfun_cur;
-	double t=0.01;
+	double t=0.2;
 
 	for (iter = 0; iter < mcmc; ++iter) {
 		for (i = 0; i < numTheta; ++i) {
@@ -363,12 +369,14 @@ static PyObject *pmcmcMain(PyObject *self, PyObject *args){
     GmmParam arg;
     PyObject *row,*col;
 
-    constant=1.0/pow(sqrt(2*M_PI),(double)DIMENTION);
+    
     if (! PyArg_ParseTuple( args, "Oi", &X, &num_corpoment)) return NULL;
     if((num[0] = PyList_Size(X)) < 0) return NULL;
     if((row = PyList_GetItem(X, 0))==NULL) return NULL;
     if((num[1] = PyList_Size(row)) < 0) return NULL;
     
+    
+
     arg.numSample = num[0];
     arg.sample=malloc(sizeof(gsl_vector*)*num[0]);
     for (i=0; i<num[0]; i++){
@@ -381,6 +389,8 @@ static PyObject *pmcmcMain(PyObject *self, PyObject *args){
         }
     }
     
+    constant=1.0/pow(sqrt(2*M_PI),(double)arg.sample[0]->size);
+
     /*double theta[]={
         0.9, //weights
         5.0,5.0,3.0,5.0,0.1, //param1
@@ -389,9 +399,21 @@ static PyObject *pmcmcMain(PyObject *self, PyObject *args){
 
     //int num_theta = num_corpoment - 1  + num_corpoment * (arg.sample[0]->size + arg.sample[0]->size * arg.sample[0]->size);
     int num_theta = 11;
+    //int num_theta = (num_corpoment - 1) + num_corpoment * ( (arg.sample[0]->size) + (arg.sample[0]->size) +  ((arg.sample[0]->size*arg.sample[0]->size-arg.sample[0]->size)/2) );
     theta=malloc(sizeof(double)*num_theta);
-    theta[0]=0.9;
-    theta[1]=5.0;
+    for(i=0;i<num_corpoment-1;i++){
+        theta[i]=1.0/num_corpoment;
+    }
+    for(;i<num_theta;i++){
+        theta[i]=(double)(rand()%10);
+    }
+    //theta[0]=0.9;
+    /*for(i=0;i<num_corpoment;i++){
+        for(j=0;j<arg.sample[0]->size;j++){
+            theta[idx+j]=
+        }
+    }*/
+    /*theta[1]=5.0;
     theta[2]=5.0;
     theta[3]=5.0;
     theta[4]=5.0;
@@ -400,7 +422,7 @@ static PyObject *pmcmcMain(PyObject *self, PyObject *args){
     theta[7]=5.0;
     theta[8]=5.0;
     theta[9]=5.0;
-    theta[10]=0.1;
+    theta[10]=0.1;*/
     /*for(i=1;i<num_theta;i++)
         theta[i] = 5.0;*/
     arg.num_corpoment = num_corpoment;
@@ -408,37 +430,53 @@ static PyObject *pmcmcMain(PyObject *self, PyObject *args){
     pctx[1]=pmcmc_init(num[1]);
     pctx[2]=pmcmc_init(num[1]);
     
-    pmcmc_hamiltonian((double (*)(void *,double *))gmm,&arg,theta,num_theta,20000);
+    //pmcmc_hamiltonian((double (*)(void *,double *))gmm,&arg,theta,num_theta,20000);
+    pmcmc_hamiltonian((double (*)(void *,double *))gmm,&arg,theta,num_theta,1000);
     return Py_BuildValue("f", 1.0);
 }
+/*
+    pmcmc.sample(dimention,)
+*/
 static PyObject *gmmSample(PyObject *self, PyObject *args){
     gsl_rng *ctx = gsl_rng_alloc (gsl_rng_default);
-    int dimention=2;
+    int dimention=DIMENTION;
     int i,j;
     PyListObject *list;
-    
+
     gsl_vector **mean=malloc(sizeof(gsl_vector*)*NUM_CORPOMENT);
     gsl_matrix **covar=malloc(sizeof(gsl_matrix*)*NUM_CORPOMENT);
 
     mean[0]=gsl_vector_alloc(DIMENTION);
     gsl_vector_set(mean[0],0,1.0);
     gsl_vector_set(mean[0],1,6.0);
+    gsl_vector_set(mean[0],2,46.0);
     covar[0]=gsl_matrix_alloc(DIMENTION,DIMENTION);
     gsl_matrix_set(covar[0],0,0,3.0);
     gsl_matrix_set(covar[0],0,1,0.1);
+    gsl_matrix_set(covar[0],0,2,0.9);
     gsl_matrix_set(covar[0],1,0,0.1);
     gsl_matrix_set(covar[0],1,1,5.0);
+    gsl_matrix_set(covar[0],1,2,0.3);
+    gsl_matrix_set(covar[0],2,0,0.9);
+    gsl_matrix_set(covar[0],2,1,0.3);
+    gsl_matrix_set(covar[0],2,2,12.0);
     mean[1]=gsl_vector_alloc(DIMENTION);
     gsl_vector_set(mean[1],0,10.0);
     gsl_vector_set(mean[1],1,20.0);
+    gsl_vector_set(mean[1],1,200.0);
     covar[1]=gsl_matrix_alloc(DIMENTION,DIMENTION);
     gsl_matrix_set(covar[1],0,0,7.0);
     gsl_matrix_set(covar[1],0,1,0.8);
+    gsl_matrix_set(covar[1],0,2,0.8);
     gsl_matrix_set(covar[1],1,0,0.8);
     gsl_matrix_set(covar[1],1,1,3.0);
+    gsl_matrix_set(covar[1],1,2,0.8);
+    gsl_matrix_set(covar[1],2,0,0.8);
+    gsl_matrix_set(covar[1],2,1,0.8);
+    gsl_matrix_set(covar[1],2,2,20.0);
     
     
-    double weight[]={0.5,0.5};
+    double weight[]={0.6,0.4};
     
     list = (PyListObject *) PyList_New(NUM_SAMPLES);
 

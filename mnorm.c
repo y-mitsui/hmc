@@ -73,6 +73,17 @@ mnorm *mnorm_init(double *parameter,int dimention){
     /*printf("sqrt(gsl_det(sigma)):%lf\n",sqrt(fabs(gsl_det(sigma))));*/
     //printf("sqrt(gsl_det(sigma)):%lf\n",sqrt(gsl_det(sigma)));
     r->sigmaDetInv=1.0/sqrt(gsl_det(sigma));
+    if(isnan(r->sigmaDetInv)){
+        for(i=0;i<sigma->size1;i++){
+            for(j=0;j<sigma->size2;j++){
+                printf("%lf ",gsl_matrix_get(sigma,i,j));
+            }
+            puts("");
+        }
+        printf("error:%lf\n",gsl_det(sigma));
+        //exit(1);
+        return NULL;
+    }
     //printf("r->sigmaDetInv:%lf\n",r->sigmaDetInv);
     //printf("r->sigmaDetInv:%lf\n",sqrt(gsl_det(sigma)));
     r->constant=1.0/pow(sqrt(2*M_PI),(double)dimention);

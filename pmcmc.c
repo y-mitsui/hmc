@@ -20,6 +20,16 @@
 
 PmcmcBuffer *pctx[NUM_THREAD];
 
+enum var_type{
+    VT_CORR_MATRIX,
+    VT_VECTOR,
+    VT_SIMPLEX
+};
+typedef struct {
+        var_type type;
+        int size;
+        void *value;
+}Variable;
 
 
 int numParameterConst;
@@ -386,7 +396,17 @@ gsl_vector* vectorFromPyObj(PyObject *obj){
     return r;
 }
 
-
+Variable *initVariable(enum var_type type,int size){
+    Variable *r=malloc(sizeof(Variable));
+    r->type=type;
+    r->size=size;
+    switch(type){
+        case CORR_MATRIX:
+            r->value=gsl_matrix_alloc(size,size)
+            break;
+    }
+    return r;
+}
 static PyObject *pmcmcMain(PyObject *self, PyObject *args){
     PyObject *X;
     int num_corpoment,i,j,num[2];
@@ -422,10 +442,7 @@ static PyObject *pmcmcMain(PyObject *self, PyObject *args){
         5.0,5.0,7.0,3.0,0.8 //param2
     };*/
 
-    typedef struct {
-        var_type type;
-        int array_number;
-    }Variable;
+    
     Variable *ctx=initVariable(CORR_MATRIX,4);
     //int num_theta = num_corpoment - 1  + num_corpoment * (arg.sample[0]->size + arg.sample[0]->size * arg.sample[0]->size);
     int num_theta = 11;
@@ -461,7 +478,7 @@ static PyObject *pmcmcMain(PyObject *self, PyObject *args){
     pctx[2]=pmcmc_init(num[1]);
     
     //pmcmc_hamiltonian((double (*)(void *,double *))gmm,&arg,theta,num_theta,20000);
-    pmcmc_hamiltonian((double (*)(void *,double *))gmm,&arg,theta,num_theta,1000);
+    pmcmc((double (*)(void *,double *))gmm,&arg,theta,num_theta,1000);
     return Py_BuildValue("f", 1.0);
 }
 /*

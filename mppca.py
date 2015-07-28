@@ -84,7 +84,7 @@ def mppca(sample,n_components=2,n_gauss=2,iter=1000):
         for j,x in enumerate(sample):
             tmp=[]
             for i in range(n_gauss):
-                cover=weights[i]*weights[i].T+sigma2*numpy.matrix(numpy.identity(num_dimention))
+                cover=weights[i]*weights[i].T+sigma2[i]*numpy.matrix(numpy.identity(num_dimention))
                 tmp.append(new_gausian_weight[i]*gaussian(x,means[i],cover))
             mix_gauss.append(sum(tmp))
 
@@ -107,36 +107,25 @@ def mppca(sample,n_components=2,n_gauss=2,iter=1000):
 
         weights = []
         for i in range(n_gauss):
+            a = numpy.zeros([num_dimention,n_components])
+            b = numpy.zeros([n_components,n_components])
             for j,x in enumerate(sample):
                 diff = (x-means[i]).T
                 a = a + diff*mean_latent_variables[i].T
                 b = b + mean_latent_variables2[i]
             weights.append(a*numpy.linalg.inv(b))
+
+        sigma2 = []
+        for i in range(n_gauss):
+            c = 0.
+            for j,x in enumerate(sample):
+                diff = (x-means[i]).T
+                tr_a = sum(numpy.diag(mean_latent_variables2[i]*weights.T*weights))
+                tmp = 2*mean_latent_variables[i].T*weights.T*diff
+                norm2 = float(diff.T*diff)
+                c += norm2-tmp+tr_a
+            sigma2.append(c/(sample.shape[0]*sample.shape[1]))
         
-        a = numpy.zeros([num_dimention,n_components])
-        b = numpy.zeros([n_components,n_components])
-        for i,x in enumerate(sample):
-            diff = (x-x_mean).T
-            a = a + diff*mean_latent_variables[i].T
-            b = b + mean_latent_variables2[i]
-        weights = a*numpy.linalg.inv(b)
-        c = 0.
-        for i,x in enumerate(sample):
-            diff = (x-x_mean).T
-            tr_a = sum(numpy.diag(mean_latent_variables2[i]*weights.T*weights))
-            tmp = 2*mean_latent_variables[i].T*weights.T*diff
-            norm2 = float(diff.T*diff)
-            c += norm2-tmp+tr_a
-        sigma2 = c/(sample.shape[0]*sample.shape[1])
-        if index % 100 == 0:
-            print "weights:\n{0}".format(weights)
-        
-        epcilon_w = numpy.fabs(latest_weights - weights).max()
-        epcilon_s = abs(latest_sigma2 - sigma2)
-        if epcilon_w < 1e-5 and epcilon_s < 1e-5 :
-            break;
-        latest_weights = weights
-        latest_sigma2 = sigma2
     return [weights,sigma2,x_mean]
 
 iris = datasets.load_iris()

@@ -8,7 +8,6 @@ from numpy import transpose as tr
 import math
 import random
 from matplotlib import pyplot as plt
-import gaussian
 
 def ppca(sample,n_components=2,iter=1000):
     sample=numpy.matrix(sample)
@@ -50,10 +49,9 @@ def ppca(sample,n_components=2,iter=1000):
         latest_sigma2 = sigma2
     return [weights,sigma2,x_mean]
 def gaussian(x,mean,cover):
-    context = Gaussian()
-    context.setMean(mean)
-    context.setCovariance(cover)
-    return math.exp(context.lnProb(x))
+    left=1./math.sqrt(2.*3.14159)**mean.shape[0]*math.sqrt(numpy.linalg.det(cover))
+    right=-1./2.*(x[0]-mean)*numpy.linalg.inv(cover)*(x[0]-mean).T
+    return numpy.array(left*numpy.exp(right))[0][0]
 def mixtureGaussian(x,means,covers,weights):
     weights.append(1.-sum(weights))
     return sum([weight*gaussian(x,mean,cover) for mean,cover,weight in zip(means,covers,weights)])
@@ -62,22 +60,23 @@ def mppca(sample,n_components=2,n_gauss=2,iter=1000):
     sample=numpy.matrix(sample)
     num_dimention = sample.shape[1]
     x_mean = numpy.average(sample,axis=0)
-    latest_weights = weights = [numpy.matrix(numpy.random.randn(num_dimention,n_components)*2.0+1.0) for _ in range(n_gauss)]
-    latest_sigma2 = sigma2 = [10.]*n_gauss
+    weights = [numpy.matrix(numpy.random.randn(num_dimention,n_components)*2.0+1.0) for _ in range(n_gauss)]
+    sigma2 = [10.]*n_gauss
     means = numpy.random.randn(n_gauss,num_dimention)
     gausian_weight = numpy.random.randn(n_gauss-1)
 
     for index in range(iter):
-
+        mean_latent_variables = []
+        mean_latent_variables2 = []
         for i in range(n_gauss):
             M = weights[i].T*weights[i] + float(sigma2[i])*numpy.matrix(numpy.identity(n_components))
             M_inv=numpy.linalg.inv(M)
             # E step
-            mean_latent_variables[i] = [M_inv*weights[i].T*(x-x_mean).T for x in sample]
-            mean_latent_variables2[i] = [float(sigma2)*M_inv+mean_latent_variables[i][j]*mean_latent_variables[i][j].T for j,x in enumerate(sample)]
+            mean_latent_variables.append( [M_inv*weights[i].T*(x-means[i]).T for x in sample] )
+            mean_latent_variables2.append( [float(sigma2[i])*M_inv+mean_latent_variables[i][j]*mean_latent_variables[i][j].T for j,x in enumerate(sample)] )
         
         R=[]
-        new_gausian_weight=gausian_weight
+        new_gausian_weight=gausian_weight.tolist()
         new_gausian_weight.append(1.0-gausian_weight.sum())
 
         mix_gauss = []
@@ -91,18 +90,20 @@ def mppca(sample,n_components=2,n_gauss=2,iter=1000):
         for i in range(n_gauss):
             tmp = []
             for j,x in enumerate(sample):
-                cover=weights[i]*weights[i].T+sigma2*numpy.matrix(numpy.identity(num_dimention))
+                cover=weights[i]*weights[i].T+sigma2[i]*numpy.matrix(numpy.identity(num_dimention))
                 tmp.append(new_gausian_weight[i]*gaussian(x,means[i],cover)/mix_gauss[j])
             R.append(tmp)
 
         
         # M step
-        gausian_weight = [sum(R[i])/sample.shape[0] for i in range(n_gauss)]
+        gausian_weight = numpy.array([sum(R[i])/sample.shape[0] for i in range(n_gauss)])
         means = []
         for i in range(n_gauss):
-            total=0.
+            total=numpy.matrix(numpy.zeros([num_dimention,1]))
             for j,x in enumerate(sample):
-                total += R[i][j]*(x-weights[i]*mean_latent_variables[i])
+                print weights[i].shape
+                print mean_latent_variables[i][j].shape
+                total += R[i][j]*(x.T-weights[i]*mean_latent_variables[i][j])
             means.append(total/sum(R[i]))
 
         weights = []
@@ -110,26 +111,28 @@ def mppca(sample,n_components=2,n_gauss=2,iter=1000):
             a = numpy.zeros([num_dimention,n_components])
             b = numpy.zeros([n_components,n_components])
             for j,x in enumerate(sample):
-                diff = (x-means[i]).T
-                a = a + diff*mean_latent_variables[i].T
-                b = b + mean_latent_variables2[i]
+                diff = (x.T-means[i])
+                a = a + R[i][j]*diff*mean_latent_variables[i][j].T
+                b = b + R[i][j]*mean_latent_variables2[i][j]
             weights.append(a*numpy.linalg.inv(b))
 
         sigma2 = []
         for i in range(n_gauss):
-            c = 0.
-            for j,x in enumerate(sample):
-                diff = (x-means[i]).T
-                tr_a = sum(numpy.diag(mean_latent_variables2[i]*weights.T*weights))
-                tmp = 2*mean_latent_variables[i].T*weights.T*diff
-                norm2 = float(diff.T*diff)
-                c += norm2-tmp+tr_a
-            sigma2.append(c/(sample.shape[0]*sample.shape[1]))
-        
+            norm2=(numpy.array(x.T-means[i])*numpy.array(x.T-means[i])).sum()
+            tmp=sum([rates*norm2 for rates,x in zip(R[i],sample)])
+            tmp2=0.
+            for j in range(sample.shape[0]):
+                tmp2 += R[i][j]*mean_latent_variables[i][j].T*weights[i].T*(x.T-means[i])
+
+            tmp3=sum([rates*sum(numpy.diag(mean_latent_variable2*weights[i].T*weights[i])) for rates,mean_latent_variable2 in zip(R[i],mean_latent_variables2[i])])
+            sigma2.append(float(numpy.array(1./(num_dimention*sum(R[i]))*(tmp+tmp2+tmp3))))
+        print weights
     return [weights,sigma2,x_mean]
 
 iris = datasets.load_iris()
-[weights,sigma2,x_mean] = ppca(iris.data)
+#[weights,sigma2,x_mean] = mppca(iris.data)
+print mppca(iris.data)
+sys.exit(1)
 m = tr(weights).dot(weights) + float(sigma2) * numpy.eye(weights.shape[1])
 m = numpy.linalg.inv(m)
 targets = iris.target

@@ -60,7 +60,7 @@ def mixtureGaussian(x,means,covers,weights):
     weights.append(1.-sum(weights))
     return sum([weight*gaussian(x,mean,cover) for mean,cover,weight in zip(means,covers,weights)])
 
-def mppca(sample,n_components=2,n_gauss=2,iter=50):
+def mppca(sample,n_components=2,n_gauss=2,iter=200):
     sample=numpy.matrix(sample)
     num_dimention = sample.shape[1]
     weights = [numpy.matrix(numpy.random.randn(num_dimention,n_components)*2.0+1.0) for _ in range(n_gauss)]
@@ -112,12 +112,22 @@ def mppca(sample,n_components=2,n_gauss=2,iter=50):
         
         # M step
         gausian_weight = numpy.array([sum(R[i])/sample.shape[0] for i in range(n_gauss)])
+        #means = []
+        #for i in range(n_gauss):
+        #    total=numpy.matrix(numpy.zeros([num_dimention,1]))
+        #    for j,x in enumerate(sample):
+        #        total += R[i][j]*(x.T-weights[i]*mean_latent_variables[i][j])
+        #    means.append((total/sum(R[i])).T)
+        
         means = []
         for i in range(n_gauss):
             total=numpy.matrix(numpy.zeros([num_dimention,1]))
             for j,x in enumerate(sample):
-                total += R[i][j]*(x.T-weights[i]*mean_latent_variables[i][j])
+                total += R[i][j]*x.T
             means.append((total/sum(R[i])).T)
+            
+            
+            
         #print means
         weights = []
         for i in range(n_gauss):
@@ -150,17 +160,23 @@ def mppca(sample,n_components=2,n_gauss=2,iter=50):
             c=1./(num_dimention*b)
             sigma2.append(c*a[0,0])
 
-        like=0.
-        for j,x in enumerate(sample):
-            tmp = []
-            for i in range(n_gauss):
-                cover=weights[i]*weights[i].T+sigma2[i]*numpy.matrix(numpy.identity(num_dimention))
-                tmp.append(gausian_weight[i]*gaussian(x,means[i],cover))
-            like+=sum(tmp)
-        print like
+        #like=0.
+        #for j,x in enumerate(sample):
+        #    tmp = []
+        #    for i in range(n_gauss):
+        #        cover=weights[i]*weights[i].T+sigma2[i]*numpy.matrix(numpy.identity(num_dimention))
+        #        tmp.append(gausian_weight[i]*gaussian(x,means[i],cover))
+        #    like+=sum(tmp)
+        #print like
         #print weights
         #if( weights[0][0,0] != val ):
     return [weights,sigma2,means]
+
+# OK
+numpy.random.seed(1)
+numpy.random.seed(400)
+# OUT
+# numpy.random.seed(123)
 
 iris = datasets.load_iris()
 #[weights,sigma2,x_mean] = ppca(iris.data)

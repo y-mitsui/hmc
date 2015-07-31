@@ -11,7 +11,7 @@ import random
 from matplotlib import pyplot as plt
 import scipy.linalg
 
-def ppca(sample,n_components=2,iter=1000):
+def ppca(sample,n_components=2,iter=300):
     sample=numpy.matrix(sample)
     num_dimention = sample.shape[1]
     x_mean = numpy.average(sample,axis=0)
@@ -38,9 +38,6 @@ def ppca(sample,n_components=2,iter=1000):
             tr_a = sum(numpy.diag(mean_latent_variables2[i]*weights.T*weights))
             tmp = 2*mean_latent_variables[i].T*weights.T*diff
             norm2 = float(diff.T*diff)
-            print diff.T*diff
-            print norm2
-            sys.exit(1)
             c += norm2-tmp+tr_a
         sigma2 = c/(sample.shape[0]*sample.shape[1])
         if index % 100 == 0:
@@ -52,6 +49,7 @@ def ppca(sample,n_components=2,iter=1000):
             break;
         latest_weights = weights
         latest_sigma2 = sigma2
+    print "x_mean:{0}".format(x_mean)
     return [weights,sigma2,x_mean]
 
 def gaussian(x,mean,cover):
@@ -62,7 +60,7 @@ def mixtureGaussian(x,means,covers,weights):
     weights.append(1.-sum(weights))
     return sum([weight*gaussian(x,mean,cover) for mean,cover,weight in zip(means,covers,weights)])
 
-def mppca_ml(sample,n_components=2,n_gauss=2,iter=100):
+def mppca_ml(sample,n_components=2,n_gauss=2,iter=300):
     sample=numpy.matrix(sample)
     num_dimention = sample.shape[1]
     weights = [numpy.matrix(numpy.random.rand(num_dimention,n_components)) for _ in range(n_gauss)]
@@ -168,15 +166,13 @@ def mppca_ml(sample,n_components=2,n_gauss=2,iter=100):
         #if( weights[0][0,0] != val ):
     return [weights,sigma2,means]
 
-def mppca(sample,n_components=2,n_gauss=2,iter=150):
+def mppca(sample,n_components=2,n_gauss=1,iter=150):
     sample=numpy.matrix(sample)
     num_dimention = sample.shape[1]
     weights = [numpy.matrix(numpy.random.rand(num_dimention,n_components)) for _ in range(n_gauss)]
-    sigma2 = [1.]*n_gauss
+    sigma2 = [0.5]*n_gauss
     means = cluster.KMeans(
                     n_clusters=n_gauss).fit(numpy.array(sample)).cluster_centers_
-    print means
-    sys.exit(1)
     gausian_weight=numpy.tile(1./float(n_gauss),n_gauss)
 
     for index in range(iter):
@@ -198,12 +194,8 @@ def mppca(sample,n_components=2,n_gauss=2,iter=150):
         for j,x in enumerate(sample):
             tmp=[]
             for i in range(n_gauss):
-
-                print cover
-                tmp.append(gausian_weight[i]*max(gaussian(x,means[i],cover[i]),1e-10))
+                tmp.append(gausian_weight[i]*gaussian(x,means[i],cover[i]))
             mix_gauss.append(sum(tmp))
-        print mix_gauss
-        sys.exit(1)
         
         for i in range(n_gauss):
             tmp = []
@@ -214,6 +206,7 @@ def mppca(sample,n_components=2,n_gauss=2,iter=150):
         
         # M step
         gausian_weight = numpy.array([sum(R[i])/sample.shape[0] for i in range(n_gauss)])
+        print gausian_weight
         means = []
         for i in range(n_gauss):
             total=numpy.matrix(numpy.zeros([num_dimention,1]))
@@ -254,15 +247,9 @@ def mppca(sample,n_components=2,n_gauss=2,iter=150):
             tmp3=sum([rates*(mean_latent_variable2*weights[i].T*weights[i]).trace() for rates,mean_latent_variable2 in zip(R[i],mean_latent_variables2[i])])
             a=tmp+tmp2+tmp3
             b=sum(R[i])
-            #print b
-            #if abs(b) < 1e-15 :
-            #    b=1e-15 if b > 0. else -1e-15
-            #print b
             c=1./(num_dimention*b)
             sigma2.append(c*a[0,0])
 
-        print weights
-        #if( weights[0][0,0] != val ):
     return [weights,sigma2,means]
 
 # OK
@@ -273,20 +260,20 @@ numpy.random.seed(123)
 
 iris = datasets.load_iris()
 boston = datasets.load_boston()
-#[weights,sigma2,x_mean] = ppca(iris.data)
+#[weights,sigma2,x_mean] = ppca(boston.data)
 #weights=[weights]
 #sigma2=[sigma2]
 #x_mean=[x_mean]
-print boston.data
+#print boston.data
 [weights,sigma2,x_mean] = mppca(boston.data)
-print weights
 sys.exit(1)
 m = tr(weights[0]).dot(weights[0]) + float(sigma2[0]) * numpy.eye(weights[0].shape[1])
 m = numpy.linalg.inv(m)
 targets = iris.target
-for i,x in enumerate(numpy.matrix(iris.data)):
+for i,x in enumerate(numpy.matrix(boston.data)):
     new_sample = m.dot(tr(weights[0])).dot((x - x_mean[0]).T)
-    plt.scatter(new_sample[0][0],new_sample[1][0],c=['r','g','b'][targets[i]])
+    #plt.scatter(new_sample[0][0],new_sample[1][0],c=['r','g','b'][targets[i]])
+    plt.scatter(new_sample[0][0],new_sample[1][0])
 plt.show()
 
 

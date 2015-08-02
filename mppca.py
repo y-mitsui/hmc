@@ -63,7 +63,7 @@ def _n_parameters(self):
     mean_params = ndim * self.n_components
     return int(cov_params + mean_params + self.n_components - 1)
     
-def mppca(sample,n_components=2,n_gauss=2,iter=200):
+def mppca(sample,n_components=2,n_gauss=1,iter=200):
     sample=numpy.matrix(sample)
     num_dimention = sample.shape[1]
     weights = [numpy.matrix(numpy.random.rand(num_dimention,n_components)*0.9) for _ in range(n_gauss)]
@@ -205,18 +205,29 @@ samples=datasets.load_iris()
 #stds = numpy.std(samples.data,axis=0)
 #samples.data=( samples.data - means ) / stds
 
-#[weights,sigma2,x_mean] = ppca(samples.data)
-#weights=[weights]
-#sigma2=[sigma2]
-#x_mean=[x_mean]
-#gausian_weight=[1.]
+[weights,sigma2,x_mean] = ppca(samples.data)
+weights=[weights]
+sigma2=[sigma2]
+x_mean=[x_mean]
+gausian_weight=[1.]
 
-[weights,sigma2,x_mean,gausian_weight] = mppca(samples.data)
+#[weights,sigma2,x_mean,gausian_weight] = mppca(samples.data)
 m = []
 for i in range(len(x_mean)):
     a = tr(weights[i]).dot(weights[i]) + float(sigma2[i]) * numpy.eye(weights[i].shape[1])
     m.append(numpy.linalg.inv(a))
 targets = samples.target
+for i,x in enumerate(numpy.matrix(samples.data)):
+    #new_sample=m[0]*weights[0].T*x.T
+    new_sample2=(m[0]*weights[0].T)*(m[0]*weights[0].T).T*x.T
+    print x.T
+    print new_sample2
+    print "------------------"
+    #plt.scatter(new_sample[0,0],new_sample[1,0],c=['r','g','b'][targets[i]])
+#plt.show()
+
+sys.exit(1)
+
 for i,x in enumerate(numpy.matrix(samples.data)):
     new_sample = numpy.matrix(numpy.zeros([weights[0].shape[1],1]))
     for j in range(len(x_mean)):

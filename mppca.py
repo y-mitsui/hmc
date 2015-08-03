@@ -45,7 +45,7 @@ def ppca(sample,n_components=2,iter=500):
         
         epcilon_w = numpy.fabs(latest_weights - weights).max()
         epcilon_s = abs(latest_sigma2 - sigma2)
-        if epcilon_w < 1e-15 and epcilon_s < 1e-15 :
+        if epcilon_w < 1e-6 and epcilon_s < 1e-6 :
             break;
         latest_weights = weights
         latest_sigma2 = sigma2
@@ -55,7 +55,7 @@ def ppca(sample,n_components=2,iter=500):
 def gaussian(x,mean,cover):
     left=1./((math.sqrt(2.*3.14159)**mean.shape[0])*math.sqrt(numpy.linalg.det(cover)))
     right=-1./2.*((x[0]-mean)*numpy.linalg.inv(cover)*(x[0]-mean).T)
-    return left*numpy.exp(right)[0,0]
+    return 2.*left*numpy.exp(right)[0,0]
 
 def _n_parameters(self):
     ndim = self.means_.shape[1]
@@ -63,7 +63,7 @@ def _n_parameters(self):
     mean_params = ndim * self.n_components
     return int(cov_params + mean_params + self.n_components - 1)
     
-def mppca(sample,n_components=2,n_gauss=1,iter=200):
+def mppca(sample,n_components=3,n_gauss=3,iter=200):
     sample=numpy.matrix(sample)
     num_dimention = sample.shape[1]
     weights = [numpy.matrix(numpy.random.rand(num_dimention,n_components)*0.9) for _ in range(n_gauss)]
@@ -198,33 +198,45 @@ def mppca(sample,n_components=2,n_gauss=1,iter=200):
 # OUT
 #numpy.random.seed(1200)
 
-#samples=datasets.load_boston()
-samples=datasets.load_iris()
+samples=datasets.load_boston()
+#samples=datasets.load_iris()
 
-#means=numpy.average(samples.data,axis=0)
-#stds = numpy.std(samples.data,axis=0)
-#samples.data=( samples.data - means ) / stds
+means=numpy.average(samples.data,axis=0)
+stds = numpy.std(samples.data,axis=0)
+samples.data=( samples.data - means ) / stds
 
-[weights,sigma2,x_mean] = ppca(samples.data)
-weights=[weights]
-sigma2=[sigma2]
-x_mean=[x_mean]
-gausian_weight=[1.]
+#[weights,sigma2,x_mean] = ppca(samples.data,2)
+#weights=[weights]
+#sigma2=[sigma2]
+#x_mean=[x_mean]
+#gausian_weight=[1.]
 
-#[weights,sigma2,x_mean,gausian_weight] = mppca(samples.data)
+[weights,sigma2,x_mean,gausian_weight] = mppca(samples.data)
+
 m = []
 for i in range(len(x_mean)):
     a = tr(weights[i]).dot(weights[i]) + float(sigma2[i]) * numpy.eye(weights[i].shape[1])
     m.append(numpy.linalg.inv(a))
 targets = samples.target
+norm_sum=0.
 for i,x in enumerate(numpy.matrix(samples.data)):
-    #new_sample=m[0]*weights[0].T*x.T
-    new_sample2=(m[0]*weights[0].T)*(m[0]*weights[0].T).T*x.T
-    print x.T
+    #new_sample = numpy.matrix(numpy.zeros([weights[0].shape[1],1]))
+    #for j in range(len(x_mean)):
+    #    new_sample += gausian_weight[j]*(numpy.linalg.inv(weights[j].T*weights[j])*weights[j].T*x.T)
+    #new_sample2 = numpy.matrix(numpy.zeros([weights[0].shape[0],1]))
+    #for j in range(len(x_mean)):
+    #    new_sample2 += gausian_weight[j]*(weights[j]*new_sample)
+
+    new_sample=weights[0]*numpy.linalg.inv(weights[0].T*weights[0])*weights[0].T*x.T
+    new_sample2=weights[1]*numpy.linalg.inv(weights[1].T*weights[1])*weights[1].T*x.T
+    new_sample3=weights[2]*numpy.linalg.inv(weights[2].T*weights[2])*weights[2].T*x.T
+    #new_sample4=weights[3]*numpy.linalg.inv(weights[3].T*weights[3])*weights[3].T*x.T
+    new_sample2=(gausian_weight[0]*new_sample) + (gausian_weight[1]*new_sample2) +  (gausian_weight[2]*new_sample3) #+  (gausian_weight[3]*new_sample4)
+    diff=(new_sample2-x.T)
+    norm_sum += math.sqrt(diff.T*diff)
     print new_sample2
-    print "------------------"
-    #plt.scatter(new_sample[0,0],new_sample[1,0],c=['r','g','b'][targets[i]])
-#plt.show()
+    print x.T
+print norm_sum/samples.data.shape[0]
 
 sys.exit(1)
 

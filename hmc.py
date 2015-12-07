@@ -4,8 +4,6 @@ import numpy
 import random
 import sys
 import math
-import theano
-import theano.tensor as T
 import time
 
 class HMC:
@@ -48,7 +46,7 @@ class HMC:
         step_size  = self.findReasonableEpsilon(self.parameter)
         u = numpy.log(10 * step_size)
         
-        log_view_frequency = int(iter / 100)
+        log_view_frequency = int(iter / 10)
         
         for i in range(iter):
             momentum = numpy.random.randn(len(self.parameter))
@@ -82,7 +80,8 @@ class HMC:
             
             if i % log_view_frequency == 0:
                 print "====== %d / %d ======"%(i,iter)
-                print "current_parameter:{0}".format(current_parameter)
+                #print "current_parameter:{0}".format(current_parameter)
+                print "loglikelihood:{0}".format(self.posterior_distribution(current_parameter,self.argument))
             if i > burn_in and i % frequency == 0:
                 result.append(current_parameter)
             
@@ -118,13 +117,15 @@ class HMC:
     def leapfrog(self, current_parameter_condinate, momentum, step_accuracy):
         momentum = momentum + (step_accuracy/2.) * self.posterior_distribution_delta(current_parameter_condinate, self.argument)
         current_parameter_condinate = current_parameter_condinate + step_accuracy * momentum
-        current_parameter_condinate = self.normalizeRange(current_parameter_condinate)
+        #current_parameter_condinate = self.normalizeRange(current_parameter_condinate)
         momentum = momentum + (step_accuracy/2.) * self.posterior_distribution_delta(current_parameter_condinate, self.argument)
     
         return current_parameter_condinate, momentum
         
 if __name__ == "__main__":
     ##########     example - 多項分布のパラメーターを階層ベイズ推定    ##########
+    import theano
+    import theano.tensor as T
     
     def callPosterior(parameter,argument):
         return posterior(parameter)
